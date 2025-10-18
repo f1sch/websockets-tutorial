@@ -6,6 +6,7 @@ window.addEventListener("DOMContentLoaded", () => {
     createBoard(board);
     // Open the websocket connection and register event handlers.
     const websocket = new WebSocket("ws://localhost:8001/");
+    receiveMoves(board, websocket);
     sendMoves(board, websocket);
 });
 
@@ -22,5 +23,31 @@ function sendMoves(board, websocket) {
             column: parseInt(column, 10),
         };
         websocket.send(JSON.stringify(event));
+    });
+}
+
+function showMessage(message) {
+    window.setTimeout(() => window.alert(message), 50);
+}
+
+function receiveMoves(board, websocket) {
+    websocket.addEventListener("message", ({ data }) => {
+        const event = JSON.parse(data);
+        switch (event.type) {
+            case "play":
+                // Update the UI with the move
+                playMove(board, event.player, event.column, event.row);
+                break;
+            case "win":
+                showMessage(`Player ${event.player} wins!`);
+                // No further messages are expected; close the Websocket con
+                websocket.close(1000);
+                break;
+            case "error":
+                showMessage(event.message);
+                break;
+            default:
+                throw new Error(`Unsupported event type:${event.type}.`);
+        }
     });
 }

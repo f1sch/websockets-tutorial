@@ -8,10 +8,7 @@ import os
 import signal
 
 import logging
-logging.basicConfig(
-    format="%(asctime)s %(message)s",
-    level=logging.DEBUG,
-)
+logging.getLogger("websockets.server").setLevel(logging.INFO)
 
 from websockets.asyncio.server import broadcast, serve
 from connect4 import PLAYER1, PLAYER2, Connect4
@@ -162,9 +159,13 @@ async def health_check(connection, request):
 async def main():
     port = int(os.environ.get("PORT", "8001"))
     # 'async with' ensures correct termination of the program by the server
-    async with serve(handler, "", port, process_request=health_check) as server:
+    async with serve(handler, "0.0.0.0", port, process_request=health_check) as server:
         loop = asyncio.get_running_loop()
-        loop.add_signal_handler(signal.SIGTERM, server.close)
+        try:
+            loop.add_signal_handler(signal.SIGTERM, server.close)
+        except NotImplementedError:
+            # Windows doesn't support signals in asyncio
+            pass
         await server.wait_closed()
 
 if __name__ == "__main__":

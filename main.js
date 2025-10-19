@@ -1,5 +1,8 @@
 import { createBoard, playMove } from "./connect4.js";
 
+// Frontend-URL (für absolute Links)
+const FRONTEND_URL = "https://f1sch.github.io/websockets-tutorial/"
+// WebSocket-Server
 const WS_URL = "wss://https://websockets-tutorial-r1wg.onrender.com/"
 
 function initGame(websocket) {
@@ -29,9 +32,14 @@ function receiveMoves(board, websocket) {
         const event = JSON.parse(data);
         switch (event.type) {
             case "init":
+                // Relative Link for players already on website
                 // Create Link for inviting the second player
                 document.querySelector(".join").href = "?join=" + event.join;
                 document.querySelector(".watch").href = "?watch=" + event.watch;
+                
+                // Absolute links for extern invite
+                document.querySelector(".join").dataset.absolute = `${FRONTEND_URL}?join=${event.join}`;
+                document.querySelector(".watch").dataset.absolute = `${FRONTEND_URL}?watch=${event.watch}`;
                 break;
             case "play":
                 // Update the UI with the move

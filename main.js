@@ -3,7 +3,7 @@ import { createBoard, playMove } from "./connect4.js";
 // Frontend-URL (für absolute Links)
 const FRONTEND_URL = "https://f1sch.github.io/websockets-tutorial/"
 // WebSocket-Server
-const WS_URL = "wss://https://websockets-tutorial-r1wg.onrender.com/"
+const WS_URL = "wss://websockets-tutorial-r1wg.onrender.com/"
 
 function initGame(websocket) {
     websocket.addEventListener("open", () => {
@@ -68,6 +68,7 @@ function sendMoves(board, websocket) {
     
     // When clicking a column, send a "play" event for a move in that column.
     board.addEventListener("click", ({ target }) => {
+        if (websocket.readyState !== WebSocket.OPEN) return;
         const column = target.dataset.column;
         // Ignore clicks outside a column
         if (column === undefined) {

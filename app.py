@@ -3,6 +3,10 @@ import asyncio
 import json
 import secrets
 
+import http
+import os
+import signal
+
 import logging
 logging.basicConfig(
     format="%(asctime)s %(message)s",
@@ -150,11 +154,18 @@ async def handler(websocket):
         # First player starts a new game.
         await start(websocket)
 
+async def health_check(connection, request):
+    if request.path == "/healthz":
+        return connection.respond(http.HTTPStatus.OK, "OK\n")
+
 # coroutine that calls serve() to start a websocket server
 async def main():
+    port = int(os.environ.get("PORT", "8001"))
     # 'async with' ensures correct termination of the program by the server
-    async with serve(handler, "", 8001) as server:
-        await server.serve_forever()
+    async with serve(handler, "", port, process_request=health_check) as server:
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGTERM, server.close)
+        await server.wait_closed()
 
 if __name__ == "__main__":
     # entry point

@@ -1,5 +1,7 @@
 import { createBoard, playMove } from "./connect4.js";
 
+const WS_URL = "wss://https://websockets-tutorial-r1wg.onrender.com/"
+
 function initGame(websocket) {
     websocket.addEventListener("open", () => {
         // Send an "init" event for the first player.
@@ -75,8 +77,9 @@ window.addEventListener("DOMContentLoaded", () => {
     // Initialize the UI
     const board = document.querySelector(".board");
     createBoard(board);
+    
     // Open the websocket connection and register event handlers.
-    const websocket = new WebSocket("wss://websockets-tutorial-r1wg.onrender.com/");
+    const websocket = new WebSocket(WS_URL);
     initGame(websocket);
     receiveMoves(board, websocket);
     sendMoves(board, websocket);

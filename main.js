@@ -1,5 +1,23 @@
 import { createBoard, playMove } from "./connect4.js";
 
+function initGame(websocket) {
+    websocket.addEventListener("open", () => {
+        // Send an "init" event for the first player.
+        const params = new URLSearchParams(window.location.search);
+        let event = { type: "init" };
+        if (params.has("join")) {
+            // Second player joins an existing game.
+            event.join = params.get("join");
+        } else if (params.has("watch")) {
+            // Spectator watches an existing game
+            event.watch = params.get("watch");
+        } else {
+            // First player starts a new game
+        }
+        websocket.send(JSON.stringify(event));
+    });
+}
+
 function showMessage(message) {
     window.setTimeout(() => window.alert(message), 50);
 }
@@ -11,6 +29,7 @@ function receiveMoves(board, websocket) {
             case "init":
                 // Create Link for inviting the second player
                 document.querySelector(".join").href = "?join=" + event.join;
+                document.querySelector(".watch").href = "?watch=" + event.watch;
                 break;
             case "play":
                 // Update the UI with the move
@@ -31,8 +50,14 @@ function receiveMoves(board, websocket) {
 }
 
 function sendMoves(board, websocket) {
+    // Don't send moves for a spectator watching a game
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("watch")) {
+        return;
+    }
+    
     // When clicking a column, send a "play" event for a move in that column.
-    board.addEventListener("click", ({target}) => {
+    board.addEventListener("click", ({ target }) => {
         const column = target.dataset.column;
         // Ignore clicks outside a column
         if (column === undefined) {
@@ -42,14 +67,6 @@ function sendMoves(board, websocket) {
             type: "play",
             column: parseInt(column, 10),
         };
-        websocket.send(JSON.stringify(event));
-    });
-}
-
-function initGame(websocket) {
-    websocket.addEventListener("open", () => {
-        // Send an "init" event for the first player.
-        const event = { type: "init" };
         websocket.send(JSON.stringify(event));
     });
 }

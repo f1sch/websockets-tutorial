@@ -1,13 +1,58 @@
 #!/usr/bin/env python
 import asyncio
-import itertools
 import json
 import secrets
 
-from websockets.asyncio.server import serve
+import logging
+logging.basicConfig(
+    format="%(asctime)s %(message)s",
+    level=logging.DEBUG,
+)
+
+from websockets.asyncio.server import broadcast, serve
 from connect4 import PLAYER1, PLAYER2, Connect4
 
 JOIN = {}
+WATCH = {}
+
+async def error(websocket, message):
+    event = {
+        "type": "error",
+        "message": message,
+    }
+    await websocket.send(json.dumps(event))
+
+async def replay(websocket, game):
+    # Make a copy to avoid an exception if game.moves changes while iteration
+    # is in progress. If a move is played while replay is running, moves will
+    # be sent out of order but each move will be sent once and eventually the
+    # UI will be consistent.
+    for player, column, row in game.moves.copy():
+        event = {
+            "type": "play",
+            "player": player,
+            "column": column,
+            "row": row,
+        }
+    await websocket.send(json.dumps(event))
+
+async def join(websocket, join_key):
+    # Find the Connect Four game.
+    try:
+        game, connected = JOIN[join_key]
+    except KeyError:
+        await error(websocket, "Game not found.")
+        return
+    
+    # Register to receive moves from this game
+    connected.add(websocket)
+    try:
+        # Send the first move, in case the first player already played it
+        await replay(websocket, game)
+        # Receive and process moves from the second player
+        await play(websocket, game, PLAYER2, connected)
+    finally:
+        connected.remove(websocket)
 
 async def start(websocket):
     # Initialize a Connect Four game, the set of WebSocket connections
@@ -18,51 +63,30 @@ async def start(websocket):
     join_key = secrets.token_urlsafe(12)
     JOIN[join_key] = game, connected
 
+    watch_key = secrets.token_urlsafe(12)
+    WATCH[watch_key] = game, connected
     try:
         # Send the secret access token to the browser of the first player,
         # where it'll be used for building a "join" link.
         event = {
             "type": "init",
             "join": join_key,
+            "watch": watch_key,
         }
         await websocket.send(json.dumps(event))
-
-        # Temporary - for testing:
-        print("first player started the game", id(game))
-        async for message in websocket:
-            print("first player sent", message)
+        # Receive and process moves from the first player
+        await play(websocket, game, PLAYER1, connected)
     
     finally:
-        del JOIN[join_key]
+        # Only remove key, if there is no connection
+        connected.discard(websocket)
+        if not connected:
+            del JOIN[join_key]
+            del WATCH[watch_key]
 
-
-async def handler(websocket):
-    # Receive and parse the "init" event from the UI
-    message = await websocket.recv()
-    event = json.loads(message)
-    assert event["type"] == "init"
-
-    # First player starts a new game
-    await start(websocket)
-
-# coroutine that manages a connection
-async def handlerOLD(websocket):
-    # Initialize a Connect Four game, the set of websocket connections
-    # receiving moves from this game, and secret access token.
-    game = Connect4()
-    connected = {websocket}
-
-    join_key = secrets.token_urlsafe(12)
-    JOIN[join_key] = game, connected
-
-
-
-    # Players take alternate turns, using the same browser
-    turns = itertools.cycle([PLAYER1, PLAYER2])
-    player = next(turns)
-
+async def play(websocket, game, player, connected):
     async for message in websocket:
-        # Parse a "play" event from the UI.
+        # Parse a "play" event from the UI
         event = json.loads(message)
         assert event["type"] == "play"
         column = event["column"]
@@ -72,11 +96,7 @@ async def handlerOLD(websocket):
             row = game.play(player, column)
         except ValueError as exc:
             # Send an "error" event if the move was illegal
-            event = {
-                "type": "error",
-                "message": str(exc), 
-            }
-            await websocket.send(json.dumps(event))
+            await error(websocket, str(exc))
             continue
 
         # Send a "play" event to update the UI
@@ -86,7 +106,7 @@ async def handlerOLD(websocket):
             "column": column,
             "row": row,
         }
-        await websocket.send(json.dumps(event))
+        broadcast(connected, json.dumps(event))
 
         # If move is winning, send a "win" event
         if game.winner is not None:
@@ -94,15 +114,45 @@ async def handlerOLD(websocket):
                 "type": "win",
                 "player": game.winner,
             }
-            await websocket.send(json.dumps(event))
-        
-        # Alternate turns.
-        player = next(turns)
-        
+            broadcast(connected, json.dumps(event))
+
+async def watch(websocket, watch_key):
+    # Find the Connect4 game
+    try:
+        game, connected = WATCH[watch_key]
+    except KeyError:
+        await error(websocket, "Game not found (watch)")
+        return
+    
+    # Register to receive moves from this game
+    connected.add(websocket)
+    try:
+        # Send previous moves, in case the game already started
+        await replay(websocket, game)
+        # Keep the connection open, but don't receive any messages
+        await websocket.wait_closed()
+    finally:
+        connected.remove(websocket)
+
+async def handler(websocket):
+    # Receive and parse the "init" event from the UI
+    message = await websocket.recv()
+    event = json.loads(message)
+    assert event["type"] == "init"
+
+    if "join" in event:
+        # Second player joins an existing game.
+        await join(websocket, event["join"])
+    elif "watch" in event:
+        # Spectator watches an existing game
+        await watch(websocket, event["watch"])
+    else:
+        # First player starts a new game.
+        await start(websocket)
 
 # coroutine that calls serve() to start a websocket server
 async def main():
-    # async with ensures correct termination of the program by the server
+    # 'async with' ensures correct termination of the program by the server
     async with serve(handler, "", 8001) as server:
         await server.serve_forever()
 

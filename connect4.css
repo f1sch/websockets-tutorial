@@ -39,11 +39,12 @@ body {
   color: white;
   font-weight: 700;
 }
+/*
 
 .action[href=""] {
   display: none;
 }
-
+*/
 /* Connect Four board */
 
 .board {
